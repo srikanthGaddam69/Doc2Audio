@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doc2Audio — read documents aloud, codes removed</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root{
+    --ink:#0A2A33; --deep:#0E3A46; --teal:#1C7293; --aqua:#2EC4B6;
+    --green:#27AE7A; --amber:#E9A23B; --red:#E5675E;
+    --light:#F4F8FA; --mute:#5C7682; --line:#DCE7EC; --txt:#12333D;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI",Helvetica,Arial,sans-serif;color:var(--txt);
+       background:linear-gradient(160deg,#0A2A33,#0E3A46);min-height:100vh;padding:26px 16px 40px}
+  .wrap{max-width:940px;margin:0 auto}
+  header h1{color:#fff;font-size:26px;margin:0 0 4px}
+  header p{color:#BFD6DE;font-size:14px;margin:0 0 18px}
+  .card{background:#fff;border-radius:14px;box-shadow:0 8px 26px rgba(0,0,0,.18);padding:22px;margin-bottom:18px}
+  /* drop zone */
+  #drop{border:2.5px dashed #9EC4CF;border-radius:12px;padding:34px 20px;text-align:center;
+        background:var(--light);cursor:pointer;transition:.15s}
+  #drop.hover{border-color:var(--aqua);background:#EAF7F5}
+  #drop .big{font-size:17px;font-weight:700;color:var(--ink)}
+  #drop .sm{font-size:13px;color:var(--mute);margin-top:5px}
+  #drop .exts{margin-top:8px}
+  .pill{display:inline-block;background:#E7F2F5;border:1px solid var(--teal);color:var(--teal);
+        font-size:11px;font-weight:700;border-radius:11px;padding:2px 9px;margin:2px}
+  /* controls */
+  .controls{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-top:4px}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:11px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:1px}
+  select,input[type=range]{font-size:14px}
+  select{padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:#fff;min-width:200px}
+  .btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+  button{border:0;border-radius:9px;padding:11px 18px;font-size:14px;font-weight:700;cursor:pointer}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .play{background:var(--green);color:#fff}
+  .pause{background:var(--amber);color:#0A2A33}
+  .stop{background:var(--red);color:#fff}
+  .ghost{background:#EAF1F4;color:var(--teal)}
+  .status{font-size:13px;color:var(--mute);margin-top:12px;min-height:18px}
+  /* text panel */
+  .panel{margin-top:6px;max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:10px;
+         padding:14px 16px;background:#fff;line-height:1.7;font-size:15px}
+  .panel .s{cursor:pointer;padding:1px 2px;border-radius:4px}
+  .panel .s:hover{background:#F0F6F8}
+  .panel .s.active{background:#FFF1CF;box-shadow:inset 0 0 0 1px #E9A23B}
+  .empty{color:var(--mute);font-style:italic}
+  .note{font-size:12.5px;color:var(--mute);line-height:1.6;margin-top:14px;
+        background:var(--light);border-left:4px solid var(--amber);border-radius:8px;padding:11px 14px}
+  .note b{color:#8A5A12}
+  .foot{color:#9FBAC3;font-size:12px;text-align:center;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🎧 Doc2Audio</h1>
+    <p>Drop a document — it reads aloud in your browser with the reference codes stripped out. No install.</p>
+  </header>
+
+  <div class="card">
+    <div id="drop">
+      <div class="big">Drag &amp; drop a document here</div>
+      <div class="sm">…or click to choose a file</div>
+      <div class="exts">
+        <span class="pill">.docx</span><span class="pill">.pdf</span>
+        <span class="pill">.txt</span><span class="pill">.md</span>
+      </div>
+      <input type="file" id="file" accept=".docx,.pdf,.txt,.md,.markdown,.htm,.html" hidden>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="card" id="player" style="display:none">
+    <div class="controls">
+      <div class="field">
+        <label>Voice</label>
+        <select id="voice"></select>
+      </div>
+      <div class="field">
+        <label>Speed <span id="rateval">1.0×</span></label>
+        <input type="range" id="rate" min="0.6" max="1.4" step="0.05" value="1">
+      </div>
+    </div>
+    <div class="btns">
+      <button class="play"  id="play">▶ Play</button>
+      <button class="pause" id="pause" disabled>⏸ Pause</button>
+      <button class="stop"  id="stop"  disabled>⏹ Stop</button>
+      <button class="ghost" id="dl">⬇ Download cleaned text</button>
+    </div>
+    <div class="status" id="pstatus">Tip: click any sentence below to start reading from there.</div>
+    <div class="panel" id="panel"><span class="empty">Cleaned text will appear here…</span></div>
+    <div class="note">
+      <b>What’s removed:</b> document/transmittal codes, requirement IDs (e.g. SYS_1234),
+      bracketed refs like [P58], revision/version strings, table‑of‑contents lines, page numbers,
+      and address/contact lines. Short meaningful terms like L2, M2, E2E are kept.
+      This plays in the browser using your device’s voices; to save a normalized <b>MP3</b> in the
+      exact Amy voice, use the Mac Doc2Audio tool.
+    </div>
+  </div>
+
+  <div class="foot">Runs entirely on your device. Reading .docx/.pdf uses libraries loaded from the web, so keep online for those.</div>
+</div>
+
+<script>
+// ---------------------------------------------------------------- code stripping (ported from the Python tool)
+const KEEP = new Set(["l1","l2","l3","m1","m2","m3","sil0","sil1","sil2","sil3","sil4","2d","3d","4g","5g","24x7","24x365","e2e"]);
+const MIXED = /[A-Za-z0-9]+(?:[._\-/][A-Za-z0-9]+)*/g;
+const URL   = /(https?:\/\/\S+|www\.\S+|\S+@\S+\.\S+)/g;
+const BRACK = /\[[^\]\n]{0,30}\]/g;
+const DOTLEAD = /\.{4,}\s*\d*/;
+const LEAD_NUM = /^\s*\d+(?:\.\d+)*\.?\s+/;
+const PAGE_ONLY = /^\s*\d+\s*$/;
+const REVTOK = /\bRev\.?\s*\d+(?:\.\d+)?\b/gi;
+const TOC = /^\s*\d+(?:\.\d+)*\.?\s+.+\s+\d+\s*$/;
+
+function isCode(tok){
+  const low = tok.toLowerCase();
+  if (KEEP.has(low)) return false;
+  const hasLetter = /[A-Za-z]/.test(tok);
+  const hasDigit  = /\d/.test(tok);
+  const hasSep    = /[._\-/]/.test(tok);
+  if (hasSep && hasDigit) return true;
+  if (hasLetter && hasDigit && tok.length >= 4) return true;
+  return false;
+}
+function cleanText(raw){
+  raw = raw.replace(/\r/g,"\n").replace(URL," ");
+  const out = [];
+  for (let line of raw.split("\n")){
+    let s = line.trim();
+    if (!s){ out.push(""); continue; }
+    const low = s.toLowerCase();
+    if (DOTLEAD.test(s) || TOC.test(s) || PAGE_ONLY.test(s) ||
+        low.includes("abn") || low.startsWith("t:") || low.startsWith("f:") ||
+        low.startsWith("e:") || low.includes("www.") || low.includes("@")) continue;
+    s = s.replace(BRACK," ").replace(REVTOK," ").replace(LEAD_NUM,"");
+    s = s.replace(MIXED, m => isCode(m) ? "" : m);
+    s = s.replace(/[|\t]/g," ").replace(/[ ]{2,}/g," ").trim();
+    s = s.replace(/\s+([,.;:?!])/g,"$1");
+    const letters = (s.match(/[A-Za-z]/g)||[]).length;
+    if (letters < 3) continue;
+    out.push(s);
+  }
+  let text = out.join("\n");
+  text = text.replace(/\(\s*[,;:]?\s*\)/g," ").replace(/\[\s*[,;:]?\s*\]/g," ");
+  text = text.replace(/\s*,\s*(?:and|or)?\s*\./g,".");
+  text = text.replace(/,(?:\s*,)+/g,",");
+  text = text.replace(/\s+([,.;:?!])/g,"$1").replace(/[ ]{2,}/g," ");
+  text = text.replace(/\n{3,}/g,"\n\n").trim();
+  return text;
+}
+
+// ---------------------------------------------------------------- extraction
+async function extract(file){
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".txt")||name.endsWith(".md")||name.endsWith(".markdown")||
+      name.endsWith(".htm")||name.endsWith(".html")){
+    let t = await file.text();
+    if (name.endsWith(".htm")||name.endsWith(".html"))
+      t = new DOMParser().parseFromString(t,"text/html").body.innerText;
+    return t;
+  }
+  if (name.endsWith(".docx")){
+    const buf = await file.arrayBuffer();
+    const res = await mammoth.extractRawText({arrayBuffer: buf});
+    return res.value;
+  }
+  if (name.endsWith(".pdf")){
+    const buf = await file.arrayBuffer();
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+    let all = "";
+    for (let p=1; p<=pdf.numPages; p++){
+      const page = await pdf.getPage(p);
+      const c = await page.getTextContent();
+      all += c.items.map(i=>i.str).join(" ") + "\n";
+    }
+    return all;
+  }
+  throw new Error("Unsupported file type. Use .docx, .pdf, .txt or .md.");
+}
+
+// ---------------------------------------------------------------- sentences
+function toSentences(text){
+  const parts = text.replace(/\n+/g," ").match(/[^.!?]+[.!?]+|\S[^.!?]*$/g) || [];
+  const out = [];
+  for (let p of parts){
+    p = p.trim(); if (!p) continue;
+    while (p.length > 240){
+      let cut = p.lastIndexOf(" ", 240); if (cut < 80) cut = 240;
+      out.push(p.slice(0,cut).trim()); p = p.slice(cut).trim();
+    }
+    out.push(p);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- state + UI
+const $ = id => document.getElementById(id);
+let sentences = [], idx = 0, speaking = false, paused = false, voices = [], cleaned = "";
+
+const drop=$("drop"), fileInput=$("file"), status=$("status"),
+      player=$("player"), panel=$("panel"), voiceSel=$("voice"),
+      rate=$("rate"), rateval=$("rateval"),
+      bPlay=$("play"), bPause=$("pause"), bStop=$("stop"), bDl=$("dl"), pstatus=$("pstatus");
+
+drop.onclick = ()=> fileInput.click();
+drop.ondragover = e=>{ e.preventDefault(); drop.classList.add("hover"); };
+drop.ondragleave = ()=> drop.classList.remove("hover");
+drop.ondrop = e=>{ e.preventDefault(); drop.classList.remove("hover");
+  if (e.dataTransfer.files[0]) handle(e.dataTransfer.files[0]); };
+fileInput.onchange = e=>{ if (e.target.files[0]) handle(e.target.files[0]); };
+
+async function handle(file){
+  stopSpeak();
+  status.textContent = "Reading “"+file.name+"”…";
+  try{
+    const raw = await extract(file);
+    cleaned = cleanText(raw);
+    sentences = toSentences(cleaned);
+    if (!sentences.length){ status.textContent = "No readable text found after cleaning."; return; }
+    renderPanel();
+    player.style.display = "block";
+    idx = 0;
+    const words = cleaned.split(/\s+/).length;
+    status.textContent = "Ready — “"+file.name+"”  ·  "+words.toLocaleString()+" words after stripping codes.";
+    bPlay.disabled = false; bDl.disabled = false;
+  }catch(err){
+    status.textContent = "Couldn’t read that file: "+err.message;
+  }
+}
+
+function renderPanel(){
+  panel.innerHTML = "";
+  sentences.forEach((s,i)=>{
+    const span = document.createElement("span");
+    span.className = "s"; span.textContent = s + " "; span.dataset.i = i;
+    span.onclick = ()=> speakFrom(i);
+    panel.appendChild(span);
+  });
+}
+function highlight(i){
+  panel.querySelectorAll(".s.active").forEach(e=>e.classList.remove("active"));
+  if (i>=0){
+    const el = panel.querySelector('.s[data-i="'+i+'"]');
+    if (el){ el.classList.add("active"); el.scrollIntoView({block:"center",behavior:"smooth"}); }
+  }
+}
+
+// voices
+function loadVoices(){
+  voices = speechSynthesis.getVoices();
+  const en = voices.filter(v=>/^en(-|_|$)/i.test(v.lang));
+  const list = (en.length?en:voices);
+  voiceSel.innerHTML = "";
+  list.forEach(v=>{
+    const o=document.createElement("option");
+    o.value=v.name; o.textContent=v.name+" ("+v.lang+")"; voiceSel.appendChild(o);
+  });
+  // prefer a natural female en-US voice if present
+  const pref = list.find(v=>/samantha|ava|jenny|aria|zira|female/i.test(v.name))
+            || list.find(v=>/en-US|en_US/i.test(v.lang)) || list[0];
+  if (pref) voiceSel.value = pref.name;
+}
+speechSynthesis.onvoiceschanged = loadVoices;
+loadVoices();
+
+rate.oninput = ()=> rateval.textContent = parseFloat(rate.value).toFixed(2).replace(/0$/,"")+"×";
+
+// speaking
+function chosenVoice(){ return voices.find(v=>v.name===voiceSel.value) || null; }
+function queueNext(){
+  if (idx >= sentences.length){ stopSpeak(); return; }
+  const u = new SpeechSynthesisUtterance(sentences[idx]);
+  const v = chosenVoice(); if (v) u.voice = v;
+  u.rate = parseFloat(rate.value); u.pitch = 1;
+  u.onstart = ()=> highlight(idx);
+  u.onend = ()=>{ if (!paused){ idx++; queueNext(); } };
+  u.onerror = ()=>{ idx++; queueNext(); };
+  speechSynthesis.speak(u);
+}
+function speakFrom(i){
+  speechSynthesis.cancel();
+  idx = i; speaking = true; paused = false;
+  bPlay.disabled = true; bPause.disabled = false; bStop.disabled = false;
+  pstatus.textContent = "Reading aloud…";
+  queueNext();
+}
+function stopSpeak(){
+  speechSynthesis.cancel();
+  speaking = false; paused = false; highlight(-1);
+  bPlay.disabled = (sentences.length===0); bPause.disabled = true; bStop.disabled = true;
+  bPlay.textContent = "▶ Play";
+  pstatus.textContent = "Tip: click any sentence below to start reading from there.";
+}
+
+bPlay.onclick = ()=>{
+  if (paused){ paused=false; speechSynthesis.resume(); bPause.disabled=false; bPlay.disabled=true;
+               pstatus.textContent="Reading aloud…"; return; }
+  speakFrom(idx || 0);
+};
+bPause.onclick = ()=>{
+  if (!speaking) return;
+  paused = true; speechSynthesis.pause();
+  bPlay.disabled=false; bPause.disabled=true; bPlay.textContent="▶ Resume";
+  pstatus.textContent="Paused.";
+};
+bStop.onclick = ()=>{ idx=0; stopSpeak(); };
+bDl.onclick = ()=>{
+  const blob = new Blob([cleaned], {type:"text/plain"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "cleaned-text.txt"; a.click();
+};
+
+// Chrome long-speech keep-alive (it otherwise stalls after ~15s)
+setInterval(()=>{ if (speaking && !paused){ speechSynthesis.pause(); speechSynthesis.resume(); } }, 12000);
+</script>
+</body>
+</html>
