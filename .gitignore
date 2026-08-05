@@ -1,0 +1,10 @@
+.DS_Store
+Thumbs.db
+desktop/macos/.venv/
+desktop/macos/voices/
+desktop/windows/.venv/
+desktop/windows/voices/
+**/__pycache__/
+*.pyc
+*.wav
+*.aiff
