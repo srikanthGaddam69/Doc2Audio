@@ -16,3 +16,9 @@ No Git knowledge needed. Pick a method.
 - ✅ Only the Doc2Audio tool is here.
 - ❌ Do **not** add work/project documents (plans, reports, decks, client material).
 - `.gitignore` already excludes local install files (downloaded voice + virtual environment).
+
+## One last touch — the CI badge
+This repo includes a GitHub Actions check (`.github/workflows/ci.yml`). After you publish, edit
+`README.md` and replace `OWNER` in the CI badge URL with your GitHub username so the green
+**passing** badge shows. (On GitHub: open README → pencil icon → change `OWNER` → Commit.)
+You can also run the check any time from the **Actions** tab → *CI* → **Run workflow**.
