@@ -5,7 +5,7 @@ Doc2Audio - turn a document into a spoken audio file, with document codes stripp
 Reads .docx .doc .rtf .odt .html .txt .md .pdf, cleans out reference codes / IDs /
 transmittals / TOC clutter, and speaks the plain text.
 
-Voice priority:
+Voice priority (works on macOS and Windows):
   1. Piper "en_US-amy-medium"  (the same voice as the narrated explainers) - if installed by Setup
   2. macOS built-in `say` voice (Samantha) - always available, needs no setup
 
@@ -17,7 +17,7 @@ Audio output:
 Usage:  python3 doc2audio.py file1.docx [file2.pdf ...]
 """
 
-import sys, os, re, subprocess, shutil
+import sys, os, re, subprocess, shutil, platform
 
 HERE  = os.path.dirname(os.path.abspath(__file__))
 VOICE = os.path.join(HERE, "voices", "en_US-amy-medium.onnx")
@@ -170,6 +170,20 @@ def synth(text, out_base):
         subprocess.run(["say", "-v", SAY_VOICE, "-o", aiff, "-f", tf], check=True)
         os.remove(tf)
         return encode(aiff, out_base, normalize=False)
+    if shutil.which("powershell") or shutil.which("pwsh"):
+        ps = shutil.which("powershell") or shutil.which("pwsh")
+        print("   voice: Windows built-in (run Setup for the Amy voice)")
+        tf = out_base + ".clean.txt"
+        open(tf, "w", encoding="utf-8").write(text)
+        wav = out_base + ".wav"
+        script = ("Add-Type -AssemblyName System.Speech;"
+                  "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer;"
+                  "$s.SetOutputToWaveFile('%s');"
+                  "$s.Speak([System.IO.File]::ReadAllText('%s'));"
+                  "$s.Dispose()") % (wav.replace("'", "''"), tf.replace("'", "''"))
+        subprocess.run([ps, "-NoProfile", "-Command", script], check=True)
+        os.remove(tf)
+        return encode(wav, out_base, normalize=False)
     raise SystemExit("No speech engine found. Run Setup.command (installs the Amy voice).")
 
 # ----------------------------------------------------------------------------- main

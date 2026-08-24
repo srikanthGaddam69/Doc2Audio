@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.0
+- Added a **GitHub Pages landing page** (`docs/`) with live demo, screenshots, demo GIF and a sample MP3.
+- Polished README: stars/license/Python/PWA/platform badges, screenshots, and a sample-audio link.
+
 ## 1.1.2
 - **Offline OCR now guides you to AI** for Telugu and other non-Latin scripts (where offline OCR is weak/unreliable), and AI errors are reported clearly (network/CORS, key). Gemini request uses canonical field names.
 
